@@ -16,8 +16,9 @@ class APIWrapper:
 	currencies = ['btc', 'ltc', 'nmc', 'nvc', 'trc', 'ppc', 'usd', 'rur', 'eur']
 
 	#time to refresh data in seconds
-	#average ticker getting time is about 4.5s
-	rRatesTime = 5
+	#1000 sample average ticker getting time is 4.84s
+	#1000 sample average depth getting time is 5.43s
+	rRatesTime = 30
 	#fees seldom change, so one refresh every three hours is reasonable
 	rFeesTime = 3600*3
 	#our balance changes every time, but we calculate it so a check every hour is enough
@@ -46,13 +47,15 @@ class APIWrapper:
 		handler = btceapi.KeyHandler(keyfile, resaveOnDeletion=True)
 
 		key = handler.getKeys()[0]
-		self.lgr.log(INFO, "Creating trader for key %s from %s"%(key, keyfile))
+		self.lgr.log(INFO, "Creating trader for key %s from %s..."%(key, keyfile))
 		self.trader = btceapi.TradeAPI(key, handler)
 
 
 		self.lgr.log(DEBUG, "Initialising global data containers...")
-		self.rates = dict.fromkeys(self.logPairs, [0, 0])
-		self.fees = dict.fromkeys(self.logPairs, 0)
+		self.rates = dict.fromkeys(self.logPairs, None)
+		for key in self.logPairs:
+			self.rates[key] = [None, None]
+		self.fees = dict.fromkeys(self.logPairs, None)
 		self.balance = dict.fromkeys(self.currencies, 0)
 		self.connection = btceapi.BTCEConnection()
 		self.lgr.log(DEBUG, "Initialised global data containers")
@@ -66,42 +69,53 @@ class APIWrapper:
 		self.getBalance()
 
 		self.lgr.log(DEBUG, "Global data containers full")
+		self.lgr.log(INFO, "APIWrapper fully initialised")
 
 	"""
 	Helper function for caching and retrieving of transaction fees.
 	Always call it to get the current fees.
 	"""
 	def getFees(self):
-		try:
-			dt = time.time()-self.lFeesTime
-			if dt > self.rFeesTime:
-				for pair in self.logPairs:
+		dt = time.time()-self.lFeesTime
+		if dt > self.rFeesTime:
+			for pair in self.logPairs:
+				try:
 					self.fees[pair] = btceapi.getTradeFee(pair, self.connection)
-				self.lgr.log(DEBUG, "Retrieved new fees from btc-e")
-				self.lFeesTime = time.time()
-			return self.fees
-		except httplib.BadStatusLine:
-			self.refreshConnection()
-			return self.getFees()
+				except httplib.BadStatusLine:
+					self.refreshConnection()
+					self.fees[pair] = btceapi.getTradeFee(pair, self.connection)
+				#btce gives fees in %, we want per one
+				self.fees[pair]/=100
+			self.lgr.log(DEBUG, "Retrieved new fees from btc-e")
+			self.lFeesTime = time.time()
+		return self.fees
 
 	"""
 	Helper function for caching and retrieving of exchange rates.
 	Always call it to get the current exchange rates.
 	"""
 	def getRates(self):
-		try:
-			dt = time.time()-self.lRatesTime
-			if dt > self.rRatesTime:
-				for pair in self.logPairs:
-					ticker = btceapi.getTicker(pair, self.connection)
-					self.rates[pair][0] = getattr(ticker, 'buy')
-					self.rates[pair][1] = getattr(ticker, 'sell')
-				self.lgr.log(DEBUG, "Retrieved new exchange rates from btc-e")
-				self.lRatesTime = time.time()
-			return self.rates
-		except httplib.BadStatusLine:
-			self.refreshConnection()
-			return self.getRates()
+		dt = time.time()-self.lRatesTime
+		if dt > self.rRatesTime:
+			for pair in self.logPairs:
+				r = None
+				try:
+					r = self.connection.makeJSONRequest("/api/2/%s/ticker" % pair)
+				except httplib.BadStatusLine:
+					r = self.connection.makeJSONRequest("/api/2/%s/ticker" % pair)
+				self.rates[pair][0] = r['ticker']['buy']
+				self.rates[pair][1] = r['ticker']['sell']
+			self.lgr.log(DEBUG, "Retrieved new exchange rates from btc-e")
+			self.lRatesTime = time.time()
+		return self.rates
+
+	"""
+	Use this function to refresh the exchange rates before due time
+	"""
+	def forceRatesRefresh(self):
+		#oh noes! We refreshed ages ago!
+		self.lRatesTime = 0
+		return self.getRates()
 
 	"""
 	Refreshes the connection to btc-e. Used to force a refresh in
@@ -144,7 +158,7 @@ class APIWrapper:
 	"""
 	def getPair(self, cur1, cur2):
 		for pair in self.logPairs:
-			if (cur1 in pair) and (cur1 in pair):
+			if (cur1 in pair) and (cur2 in pair):
 				return pair
 		self.lgr.log(ERROR, "No pair exists with currencies %s and %s"%(cur1, cur2))
 
@@ -167,6 +181,6 @@ class APIWrapper:
 	currency 'toCur', with amount of the original currency 'amount'
 	"""
 	def calcTransaction(self, fromCur, toCur, amount):
-		fee = self.getFees[self.getPair(fromCur, toCur)]
+		fee = self.getFees()[self.getPair(fromCur, toCur)]
 		amount *= self.getRate(fromCur, toCur) * (1-fee) 
 		return amount
