@@ -74,7 +74,7 @@ class APIWrapper:
 		for pair in self.logPairs:
 			try:
 				self.fees[pair] = btceapi.getTradeFee(pair, self.connection)
-			except:
+			except httplib.HTTPException:
 				self.refreshConnection()
 				return self.refreshFees()
 			#btce gives fees in %, we want per one
@@ -90,7 +90,7 @@ class APIWrapper:
 			r = None
 			try:
 				r = self.connection.makeJSONRequest("/api/2/%s/ticker" % pair)
-			except:
+			except httplib.HTTPException:
 				self.refreshConnection()
 				return self.refreshRates()
 			self.rates[pair][0] = r['ticker']['buy']
@@ -117,15 +117,15 @@ class APIWrapper:
 	def refreshBalance(self):
 		try:
 			r = self.trader.getInfo(self.connection)
-			self.lgr.log(debug, "retrieved balance from btc-e")
+			self.lgr.log(DEBUG, "retrieved balance from btc-e")
 			#check correctness
 			for cur in self.currencies:
 				bal = getattr(r, 'balance_'+cur)
 				if bal!=self.balance[cur]:
-					self.lgr.log(warning, "calculated %s balance (%f) differs from real (%f)"%(cur.upper(), self.balance[cur], bal))
+					self.lgr.log(WARNING, "calculated %s balance (%f) differs from real (%f)"%(cur.upper(), self.balance[cur], bal))
 				self.balance[cur] = bal
 			self.lBalTime = time.time()
-		except:
+		except httplib.HTTPException:
 			self.refreshConnection()
 			return self.refreshBalance()
 
