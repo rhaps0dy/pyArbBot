@@ -18,8 +18,8 @@ class APIWrapper:
 	#1000 sample average ticker getting time is 4.84s
 	#1000 sample average depth getting time is 5.43s
 	rRatesTime = 30
-	#fees seldom change, so one refresh every three hours is reasonable
-	rFeesTime = 3600*3
+	#fees seldom change, so one refresh every day is reasonable
+	rFeesTime = 3600*24
 	#our balance changes every time, but we calculate it so a check every hour is enough
 	rBalTime = 3600
 
@@ -43,7 +43,7 @@ class APIWrapper:
 		handler = btceapi.KeyHandler(keyfile, resaveOnDeletion=True)
 
 		key = handler.getKeys()[0]
-		self.lgr.log(INFO, "Creating trader for key %s from %s..."%(key, keyfile))
+		self.lgr.log(INFO, "Creating trader for key [...]-%s from %s..."%(key[-8:], keyfile))
 		self.trader = btceapi.TradeAPI(key, handler)
 
 
@@ -57,61 +57,46 @@ class APIWrapper:
 		self.lgr.log(DEBUG, "Initialised global data containers")
 
 		self.lgr.log(DEBUG, "Filling global data containers...")
-		self.getRates()
-		self.getFees()
+		self.refreshRates()
+		self.refreshFees()
 
 		#disable warnings for getting first balance
 		self.lgr.log(INFO, "The following warnings will tell you your current balance")
-		self.getBalance()
+		self.refreshBalance()
 
 		self.lgr.log(DEBUG, "Global data containers full")
 		self.lgr.log(INFO, "APIWrapper fully initialised")
 
 	"""
-	Helper function for caching and retrieving of transaction fees.
-	Always call it to get the current fees.
+	Get the latest trading fees
 	"""
-	def getFees(self):
-		dt = time.time()-self.lFeesTime
-		if dt > self.rFeesTime:
-			for pair in self.logPairs:
-				try:
-					self.fees[pair] = btceapi.getTradeFee(pair, self.connection)
-				except httplib.BadStatusLine:
-					self.refreshConnection()
-					self.fees[pair] = btceapi.getTradeFee(pair, self.connection)
-				#btce gives fees in %, we want per one
-				self.fees[pair]/=100
-			self.lgr.log(DEBUG, "Retrieved new fees from btc-e")
-			self.lFeesTime = time.time()
-		return self.fees
+	def refreshFees(self):
+		for pair in self.logPairs:
+			try:
+				self.fees[pair] = btceapi.getTradeFee(pair, self.connection)
+			except:
+				self.refreshConnection()
+				return self.refreshFees()
+			#btce gives fees in %, we want per one
+			self.fees[pair]/=100
+		self.lgr.log(DEBUG, "Retrieved new fees from btc-e")
+		self.lFeesTime = time.time()
 
 	"""
-	Helper function for caching and retrieving of exchange rates.
-	Always call it to get the current exchange rates.
+	Get the latest exchange rates
 	"""
-	def getRates(self):
-		dt = time.time()-self.lRatesTime
-		if dt > self.rRatesTime:
-			for pair in self.logPairs:
-				r = None
-				try:
-					r = self.connection.makeJSONRequest("/api/2/%s/ticker" % pair)
-				except httplib.BadStatusLine:
-					r = self.connection.makeJSONRequest("/api/2/%s/ticker" % pair)
-				self.rates[pair][0] = r['ticker']['buy']
-				self.rates[pair][1] = r['ticker']['sell']
-			self.lgr.log(DEBUG, "Retrieved new exchange rates from btc-e")
-			self.lRatesTime = time.time()
-		return self.rates
-
-	"""
-	Use this function to refresh the exchange rates before due time
-	"""
-	def forceRatesRefresh(self):
-		#oh noes! We refreshed ages ago!
-		self.lRatesTime = 0
-		return self.getRates()
+	def refreshRates(self):
+		for pair in self.logPairs:
+			r = None
+			try:
+				r = self.connection.makeJSONRequest("/api/2/%s/ticker" % pair)
+			except:
+				self.refreshConnection()
+				return self.refreshRates()
+			self.rates[pair][0] = r['ticker']['buy']
+			self.rates[pair][1] = r['ticker']['sell']
+		self.lgr.log(DEBUG, "Retrieved new exchange rates from btc-e")
+		self.lRatesTime = time.time()
 
 	"""
 	Refreshes the connection to btc-e. Used to force a refresh in
@@ -126,28 +111,23 @@ class APIWrapper:
 		self.lgr.log(DEBUG, "Reset connection to btc-e")
 
 	"""
-	Caches and refreshes when necessary the current balance. When it refreshes it
-	checks if there were errors updating it and the cached balance differs from the
-	one in btc-e
+	Refreshes the balance, checks if there were errors updating it and
+	whether the cached balance differs from the one in btc-e
 	"""
-	def getBalance(self):
+	def refreshBalance(self):
 		try:
-			dt = time.time()-self.lBalTime
-			if dt > self.rBalTime:
-				#refresh the balance
-				r = self.trader.getInfo(self.connection)
-				self.lgr.log(DEBUG, "Retrieved balance from btc-e")
-				#check correctness
-				for cur in self.currencies:
-					bal = getattr(r, 'balance_'+cur)
-					if bal!=self.balance[cur]:
-						self.lgr.log(WARNING, "Calculated %s balance (%f) differs from real (%f)"%(cur.upper(), self.balance[cur], bal))
-					self.balance[cur] = bal
-				self.lBalTime = time.time()
-			return self.balance
-		except httplib.BadStatusLine:
+			r = self.trader.getInfo(self.connection)
+			self.lgr.log(debug, "retrieved balance from btc-e")
+			#check correctness
+			for cur in self.currencies:
+				bal = getattr(r, 'balance_'+cur)
+				if bal!=self.balance[cur]:
+					self.lgr.log(warning, "calculated %s balance (%f) differs from real (%f)"%(cur.upper(), self.balance[cur], bal))
+				self.balance[cur] = bal
+			self.lBalTime = time.time()
+		except:
 			self.refreshConnection()
-			return self.getBalance()
+			return self.refreshBalance()
 
 	"""
 	Get the btc-e trade pair which contains the two specified currencies
@@ -167,9 +147,9 @@ class APIWrapper:
 		#check the order of currencies
 		if pair[:3] == fromCur:
 			#take the sell one
-			rate = self.getRates()[pair][1]
+			rate = self.rates[pair][1]
 		else:
-			rate = 1/self.getRates()[pair][0]
+			rate = 1/self.rates[pair][0]
 		return rate
 
 	"""
@@ -177,6 +157,21 @@ class APIWrapper:
 	currency 'toCur', with amount of the original currency 'amount'
 	"""
 	def calcTransaction(self, fromCur, toCur, amount):
-		fee = self.getFees()[self.getPair(fromCur, toCur)]
+		fee = self.fees[self.getPair(fromCur, toCur)]
 		amount *= self.getRate(fromCur, toCur) * (1-fee) 
 		return amount
+
+	#def performImmediateTransaction(self, fromCur, toCur, amount):
+	#	self.trader.trad
+
+	"""
+	Refresh global variables if necessary
+	"""
+	def checkStale(self, rates=True, balance=True, fees=True):
+		t = time.time()
+		if rates and t-self.lRatesTime>self.rRatesTime:
+			self.refreshRates()
+		if balance and t-self.lBalTime>self.rBalTime:
+			self.refreshBalance()
+		if fees and t-self.lFeesTime>self.rFeesTime:
+			self.refreshFees()
