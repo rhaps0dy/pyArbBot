@@ -2,7 +2,6 @@ import time
 import btceapi
 import httplib
 from logger import *
-import os, os.path
 
 """
 Wrapper for the btceapi Python module. Provides a tailored interface
@@ -29,7 +28,7 @@ class APIWrapper:
 	connection = None 
 	balance = None
 
-	def __init__(self, logger=None):
+	def __init__(self,  keyfile, logger=None):
 		#the last time we refreshed was Jan 1 1970!
 		self.lRatesTime = 0
 		self.lFeesTime = 0
@@ -41,9 +40,6 @@ class APIWrapper:
 			self.lgr = logger
 
 		self.lgr.log(INFO, "Initialising APIWrapper...")
-		keyfile = os.environ['HOME']+"/.btce_keys"
-		if not os.path.exists(keyfile):
-			self.lgr.log(ERROR, "Please create a key file on %s"%keyfile)
 		handler = btceapi.KeyHandler(keyfile, resaveOnDeletion=True)
 
 		key = handler.getKeys()[0]
