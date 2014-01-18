@@ -43,19 +43,18 @@ class Logger:
 		if t>self.level:
 			return
 		if t==ERROR:
-			msg = self.tError+msg
-			syslog.syslog(syslog.LOG_ERR, msg)
+			syslog.syslog(syslog.LOG_ERR, '[ERROR] '+msg)
 			#throw the error as python exception
-			print msg
+			print self.tError+msg
 			raise Exception(msg)
 		elif t==WARNING:
+			syslog.syslog(syslog.LOG_WARNING, '[WARNING] '+msg)
 			msg = self.tWarning+msg
-			syslog.syslog(syslog.LOG_WARNING, msg)
 		elif t==INFO:
+			syslog.syslog(syslog.LOG_INFO, '[INFO] '+msg)
 			msg = self.tInfo+msg
-			syslog.syslog(syslog.LOG_INFO, msg)
 		elif t==DEBUG:
+			syslog.syslog(syslog.LOG_DEBUG, '[DEBUG] '+msg)
 			msg = self.tDebug+msg
-			syslog.syslog(syslog.LOG_DEBUG, msg)
 		if self.show:
 			print msg
