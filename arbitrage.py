@@ -84,7 +84,7 @@ class ArbBot:
 			cycle, profit = self.getMostProfitableCycle()
 
 			if profit>1:
-				init = balance[cycle[0]]
+				init = self.api.balance[cycle[0]]
 				self.api.performImmediateTransaction(cycle[0], cycle[1], self.api.balance[cycle[0]])
 				self.api.performImmediateTransaction(cycle[1], cycle[2], self.api.balance[cycle[1]])
 				self.api.performImmediateTransaction(cycle[2], cycle[0], self.api.balance[cycle[2]])
@@ -94,7 +94,7 @@ class ArbBot:
 				msg+=cycle[-1].upper()
 				msg+=" gave %f theoretical profit, total"%profit
 				self.log(DEBUG, msg)
-				self.log(INFO, 'From %f to %f %s (%f profit)'%(init, balance[cycle[0]], cycle[0], balance[cycle[0]]/init))
+				self.log(INFO, 'From %f to %f %s (%f profit)'%(init, self.api.balance[cycle[0]], cycle[0], self.api.balance[cycle[0]]/init))
 			if time.time()-t >= self.api.rFeesTime:
 				self.api.refreshFees()
 
