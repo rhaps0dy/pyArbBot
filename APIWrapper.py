@@ -59,9 +59,6 @@ class APIWrapper:
 		self.lgr.log(DEBUG, "Filling global data containers...")
 		self.refreshRates()
 		self.refreshFees()
-
-		#disable warnings for getting first balance
-		self.lgr.log(INFO, "The following warnings will tell you your current balance")
 		self.refreshBalance()
 
 		self.lgr.log(DEBUG, "Global data containers full")
@@ -76,7 +73,7 @@ class APIWrapper:
 				self.fees[pair] = btceapi.getTradeFee(pair, self.connection)
 			except httplib.HTTPException:
 				self.refreshConnection()
-				return self.refreshFees()
+				return self.refreshFees
 			#btce gives fees in %, we want per one
 			self.fees[pair]/=100
 		self.lgr.log(DEBUG, "Retrieved new fees from btc-e")
@@ -114,15 +111,19 @@ class APIWrapper:
 	Refreshes the balance, checks if there were errors updating it and
 	whether the cached balance differs from the one in btc-e
 	"""
-	def refreshBalance(self):
+	def refreshBalance(self, curList=None):
 		try:
 			r = self.trader.getInfo(self.connection)
 			self.lgr.log(DEBUG, "retrieved balance from btc-e")
 			#check correctness
-			for cur in self.currencies:
+			if curList==None:
+				cl = self.currencies
+			else:
+				cl = curList
+			for cur in cl:
 				bal = getattr(r, 'balance_'+cur)
 				if bal!=self.balance[cur]:
-					self.lgr.log(WARNING, "calculated %s balance (%f) differs from real (%f)"%(cur.upper(), self.balance[cur], bal))
+					self.lgr.log(INFO, "%s balance was %f, updated to %f"%(cur.upper(), self.balance[cur], bal))
 				self.balance[cur] = bal
 			self.lBalTime = time.time()
 		except httplib.HTTPException:
@@ -161,8 +162,32 @@ class APIWrapper:
 		amount *= self.getRate(fromCur, toCur) * (1-fee) 
 		return amount
 
-	#def performImmediateTransaction(self, fromCur, toCur, amount):
-	#	self.trader.trad
+	"""
+	Perform a transaction that would fulfill immediately, i.e sell at
+	the highest bid price or buy at the lowest ask price
+	"""
+	def performImmediateTransaction(self, fromCur, toCur, amount):
+		pair = self.getPair(fromCur, toCur)
+		rate = transType = am = None
+		cTrans = self.calcTransaction(fromCur, toCur, amount)
+		if pair[:3] == fromCur:
+			transType = 'sell'
+			am = amount
+			rate = self.rates[pair][1]
+		else:
+			transType = 'buy'
+			am = cTrans
+			rate = self.rates[pair][0]
+		try:
+			self.trader.trade(pair, transType, rate, am, self.connection)
+		except httplib.HTTPException:
+			self.refreshConnection()
+			self.trader.trade(pair, transType, rate, am, self.connection)
+		while(len(self.trader.activeOrders(pair, self.connection))>0):
+			pass
+		self.lgr.log(DEBUG, "Performed '%s' on %s, at price %f by amount %f"%(transType, pair, rate, am))
+		self.refreshBalance([fromCur, toCur])
+
 
 	"""
 	Refresh global variables if necessary

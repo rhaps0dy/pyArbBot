@@ -83,16 +83,20 @@ class ArbBot:
 			self.api.refreshRates()
 			cycle, profit = self.getMostProfitableCycle()
 
-			#### TRADE HERE #####
-
-			msg = ""
-			for cur in cycle[:-1]:
-				msg+=cur.upper()+' -> '
-			msg+=cycle[-1].upper()
-			msg+=" gave %f profit, total"%profit
-			self.log(INFO, msg)
-			if time.time()-t >= self.api.rBalTime:
-				self.api.checkStale(rates=False)
+			if profit>1:
+				init = balance[cycle[0]]
+				self.api.performImmediateTransaction(cycle[0], cycle[1], self.api.balance[cycle[0]])
+				self.api.performImmediateTransaction(cycle[1], cycle[2], self.api.balance[cycle[1]])
+				self.api.performImmediateTransaction(cycle[2], cycle[0], self.api.balance[cycle[2]])
+				msg = ""
+				for cur in cycle[:-1]:
+					msg+=cur.upper()+' -> '
+				msg+=cycle[-1].upper()
+				msg+=" gave %f theoretical profit, total"%profit
+				self.log(DEBUG, msg)
+				self.log(INFO, 'From %f to %f %s (%f profit)'%(init, balance[cycle[0]], cycle[0], balance[cycle[0]]/init))
+			if time.time()-t >= self.api.rFeesTime:
+				self.api.refreshFees()
 
 if __name__=='__main__':
 	parser = argparse.ArgumentParser(description="Arbitrage-based BTC-E trading bot", epilog="Key file syntax is three lines, one with API key, one with private key and one with nonce")
