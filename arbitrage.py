@@ -93,7 +93,7 @@ class ArbBot:
 					msg+=cur.upper()+' -> '
 				msg+=cycle[-1].upper()
 				msg+=" gave %f theoretical profit, total"%profit
-				self.log(DEBUG, msg)
+				self.log(INFO, msg)
 				self.log(INFO, 'From %f to %f %s (%f profit)'%(init, self.api.balance[cycle[0]], cycle[0], self.api.balance[cycle[0]]/init))
 			if time.time()-t >= self.api.rFeesTime:
 				self.api.refreshFees()

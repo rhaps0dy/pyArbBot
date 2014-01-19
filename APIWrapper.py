@@ -183,8 +183,14 @@ class APIWrapper:
 		except httplib.HTTPException:
 			self.refreshConnection()
 			self.trader.trade(pair, transType, rate, am, self.connection)
-		while(len(self.trader.activeOrders(pair, self.connection))>0):
-			pass
+		cont = True
+		while cont:
+			try:
+				cont = (len(self.trader.activeOrders(pair, self.connection))>0)
+			except httplib.HTTPException:
+				self.refreshConnection()
+				cont = True
+
 		self.lgr.log(DEBUG, "Performed '%s' on %s, at price %f by amount %f"%(transType, pair, rate, am))
 		self.refreshBalance([fromCur, toCur])
 
